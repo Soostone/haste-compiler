@@ -1,19 +1,22 @@
-{-# LANGUAGE ForeignFunctionInterface, OverloadedStrings, PatternGuards, 
-             FlexibleInstances, CPP #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE FlexibleInstances        #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PatternGuards            #-}
 -- | Haste-specific JSON library. JSON is common enough that it's a good idea
 --   to create as fast and small an implementation as possible. To that end,
 --   the parser is implemented entirely in Javascript, and works with any
 --   browser that supports JSON.parse; IE does this from version 8 and up, and
 --   everyone else has done it since just about forever.
 module Haste.JSON (JSON (..), encodeJSON, decodeJSON, (!), (~>)) where
-import Haste
-import Haste.Prim
-import Data.String as S
+import           Data.String         as S
+import           Haste
+import           Haste.Prim
 #ifndef __HASTE__
-import Haste.Parsing
-import Control.Applicative
-import Data.Char (ord)
-import Numeric (showHex)
+import           Control.Applicative
+import           Data.Char           (ord)
+import           Haste.Parsing
+import           Numeric             (showHex)
 #endif
 
 -- Remember to update jsParseJSON if this data type changes!
@@ -23,6 +26,7 @@ data JSON
   | Bool Bool
   | Arr  [JSON]
   | Dict [(JSString, JSON)]
+  | Null
 
 instance IsString JSON where
   fromString = Str . S.fromString
@@ -82,7 +86,7 @@ infixl 5 !
 class JSONLookup a where
   -- | Look up a key in a JSON dictionary. Return Nothing if the key can't be
   --   found for some reason.
-  (~>) :: a -> JSString -> Maybe JSON  
+  (~>) :: a -> JSString -> Maybe JSON
 infixl 5 ~>
 
 instance JSONLookup JSON where
@@ -138,9 +142,11 @@ decodeJSON = liftMaybe . runParser json . fromJSStr
                   Bool <$> boolean,
                   Str  <$> jsstring,
                   Arr  <$> array,
-                  Dict <$> object]
+                  Dict <$> object,
+                  null]
     jsstring = toJSStr <$> oneOf [quotedString '\'', quotedString '"']
     boolean = oneOf [string "true" >> pure True, string "false" >> pure False]
+    null = string "null" >> pure Null
     array = do
       char '[' >> possibly whitespace
       elements <- commaSeparated json
