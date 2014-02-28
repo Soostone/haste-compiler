@@ -1,8 +1,10 @@
 {-# LANGUAGE EmptyDataDecls, ForeignFunctionInterface, MagicHash, 
-    TypeSynonymInstances, FlexibleInstances, OverlappingInstances, CPP #-}
+    TypeSynonymInstances, FlexibleInstances, OverlappingInstances,
+    OverloadedStrings, CPP #-}
 module Haste.Prim (JSString, toJSStr, fromJSStr, JSAny,
                    Ptr, toPtr, fromPtr) where
 import Foreign.Ptr
+import Data.Monoid
 import Data.String
 #ifdef __HASTE__
 import Unsafe.Coerce
@@ -15,6 +17,7 @@ type JSAny = Ptr Haste.Prim.Any
 data Any
 
 #ifdef __HASTE__
+foreign import ccall jsStrCat :: JSString -> JSString -> JSString
 foreign import ccall strEq :: JSString -> JSString -> Bool
 foreign import ccall strOrd :: JSString -> JSString -> Ptr Ordering
 
@@ -59,6 +62,10 @@ instance IsString JSString where
 fromJSStr :: JSString -> String
 fromJSStr = unsafeCoerce# HP.fromJSStr
 
+instance Monoid JSString where
+  mempty = ""
+  mappend a b = jsStrCat a b
+
 #else
 
 -- | JSStrings are represented as normal strings server-side; should probably
@@ -76,6 +83,10 @@ instance Ord JSString where
 
 instance Show JSString where
   show = fromJSStr
+
+instance Monoid JSString where
+  mempty = JSString ""
+  mappend a b = toJSStr $ fromJSStr a ++ fromJSStr b
 
 toJSStr :: String -> JSString
 toJSStr = JSString
