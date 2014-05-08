@@ -57,7 +57,7 @@ Library
         Haste.Binary.Types
     Build-Depends:
         integer-gmp,
-        transformers,
+        transformers < 0.4,
         monads-tf,
         ghc-prim,
         fursuit,
