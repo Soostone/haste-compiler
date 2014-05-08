@@ -1,15 +1,24 @@
-{-# LANGUAGE GADTs, TypeFamilies, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE GADTs, TypeFamilies, FlexibleInstances, FlexibleContexts, CPP #-}
 -- | Implements concurrency for Haste based on "A Poor Man's Concurrency Monad".
 module Haste.Concurrent.Monad (
-    MVar, CIO, ToConcurrent (..),
+    MVar, CIO, ToConcurrent (..), MonadConc (..),
     forkIO, forkMany, newMVar, newEmptyMVar, takeMVar, putMVar, withMVarIO,
-    peekMVar, modifyMVarIO, concurrent, liftIO
+    peekMVar, modifyMVarIO, readMVar, concurrent, liftIO
   ) where
 import Control.Monad.IO.Class
 import Control.Monad.Cont.Class
 import Control.Monad
 import Control.Applicative
 import Data.IORef
+
+-- | Any monad which supports concurrency.
+class Monad m => MonadConc m where
+  liftConc :: CIO a -> m a
+  fork     :: m () -> m ()
+
+instance MonadConc CIO where
+  liftConc = id
+  fork = forkIO
 
 -- | Embed concurrent computations into non-concurrent ones.
 class ToConcurrent a where
@@ -102,6 +111,15 @@ peekMVar (MVar ref) = liftIO $ do
     Full x _ -> return (Just x)
     _        -> return Nothing
 
+-- | Read an MVar then put it back. As Javascript is single threaded, this
+--   function is atomic. If this ever changes, this function will only be
+--   atomic as long as no other thread attempts to write to the MVar.
+readMVar :: MVar a -> CIO a
+readMVar m = do
+  x <- takeMVar m
+  putMVar m x
+  return x
+
 -- | Write an MVar. Blocks if the MVar is already full.
 --   Only the first reader in the read queue, if any, is woken.
 putMVar :: MVar a -> a -> CIO ()
@@ -134,6 +152,7 @@ modifyMVarIO v m = do
 --   share MVars; if this is the case, then a call to `concurrent` may return
 --   before all the threads it spawned finish executing.
 concurrent :: CIO () -> IO ()
+#ifdef __HASTE__
 concurrent (C m) = scheduler [m (const Stop)]
   where
     scheduler (p:ps) =
@@ -147,3 +166,6 @@ concurrent (C m) = scheduler [m (const Stop)]
           scheduler ps
     scheduler _ =
       return ()
+#else
+concurrent = error "concurrent called in a non-browser environment!"
+#endif

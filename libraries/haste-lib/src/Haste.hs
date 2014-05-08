@@ -13,9 +13,6 @@ import Haste.JSType
 import Haste.DOM
 import Haste.Hash
 import Control.Monad.IO.Class
-#ifndef __HASTE__
-import Data.List (intercalate)
-#endif
 
 #ifdef __HASTE__
 foreign import ccall jsAlert  :: JSString -> IO ()
@@ -33,8 +30,6 @@ jsEval   :: JSString -> IO JSString
 jsEval = error "Tried to use jsEval on server side!"
 #endif
 
-type URL = String
-
 -- | Javascript alert() function.
 alert :: MonadIO m => String -> m ()
 alert = liftIO . jsAlert . toJSStr
@@ -46,18 +41,9 @@ prompt q = liftIO $ do
   return (fromJSStr a)
 
 -- | Javascript eval() function.
-eval :: MonadIO m => String -> m String
-eval js = liftIO $ jsEval (toJSStr js) >>= return . fromJSStr
+eval :: MonadIO m => JSString -> m JSString
+eval = liftIO . jsEval
 
 -- | Use console.log to write a message.
 writeLog :: MonadIO m => String -> m ()
 writeLog = liftIO . jsLog . toJSStr
-
--- | Concatenate a series of JSStrings using the specified separator.
-catJSStr :: JSString -> [JSString] -> JSString
-#ifdef __HASTE__
-foreign import ccall jsCat    :: Ptr [JSString] -> JSString -> JSString
-catJSStr sep strs = jsCat (toPtr strs) sep
-#else
-catJSStr sep strs = toJSStr $ intercalate (fromJSStr sep) (map fromJSStr strs)
-#endif

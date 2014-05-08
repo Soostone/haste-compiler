@@ -15,7 +15,6 @@ import GhcMonad
 import System.Environment (getArgs)
 import Control.Monad (when)
 import Haste
-import Haste.Util (showOutputable)
 import Haste.Environment
 import Haste.Version
 import Args
@@ -30,6 +29,7 @@ import Data.Version
 import Data.List
 import Data.String
 import qualified Data.ByteString.Char8 as B
+import qualified Control.Shell as Sh
 
 logStr :: String -> IO ()
 logStr = hPutStrLn stderr
@@ -119,12 +119,12 @@ compiler cmdargs = do
   case argRes of
     -- We got --help as an argument - display help and exit.
     Left help -> putStrLn help
-    
+
     -- We got a config and a set of arguments for GHC; let's compile!
     Right (cfg, ghcargs) -> do
       -- Parse static flags, but ignore profiling.
       (ghcargs', _) <- parseStaticFlags [noLoc a | a <- ghcargs, a /= "-prof"]
-      
+
       runGhc (Just libdir) $ handleSourceError (const $ liftIO exitFailure) $ do
         -- Handle dynamic GHC flags. Make sure __HASTE__ is #defined.
         let args = "-D__HASTE__" : map unLoc ghcargs'
@@ -142,33 +142,62 @@ compiler cmdargs = do
           _ <- load LoadAllTargets
           depanal [] False
         mapM_ (compile cfg dynflags') deps
-        
+
         -- Link everything together into a .js file.
         when (performLink cfg) $ liftIO $ do
           flip mapM_ files' $ \file -> do
-            logStr $ "Linking " ++ outFile cfg file
+            let outfile = outFile cfg cfg file
+            logStr $ "Linking " ++ outfile
 #if __GLASGOW_HASKELL__ >= 706
             let pkgid = showPpr dynflags $ thisPackage dynflags'
 #else
             let pkgid = showPpr $ thisPackage dynflags'
 #endif
             link cfg pkgid file
-            case useGoogleClosure cfg of 
-              Just clopath -> closurize clopath $ outFile cfg file
+            case useGoogleClosure cfg of
+              Just clopath -> closurize clopath
+                                        outfile
+                                        (useGoogleClosureFlags cfg)
               _            -> return ()
+            when (outputHTML cfg) $ do
+              res <- Sh.shell $ Sh.withCustomTempFile "." $ \tmp h -> do
+                prog <- Sh.file outfile
+                Sh.hPutStrLn h (htmlSkeleton outfile prog)
+                Sh.liftIO $ hClose h
+                Sh.mv tmp outfile
+              case res of
+                Right () -> return ()
+                Left err -> error $ "Couldn't output HTML file: " ++ err
+
+-- | Produce an HTML skeleton with an embedded JS program.
+htmlSkeleton :: FilePath -> String -> String
+htmlSkeleton filename prog = concat [
+  "<!DOCTYPE HTML>",
+  "<html><head>",
+  "<title>", filename , "</title>",
+  "<meta charset=\"UTF-8\">",
+  "<script type=\"text/javascript\">", prog, "</script>",
+  "</head><body></body></html>"]
 
 -- | Do everything required to get a list of STG bindings out of a module.
 prepare :: (GhcMonad m) => DynFlags -> ModSummary -> m ([StgBinding], ModuleName)
 prepare dynflags theMod = do
   env <- getSession
   let name = moduleName $ ms_mod theMod
+#if __GLASGOW_HASKELL__ >= 707
+      mod  = ms_mod theMod
+#endif
   pgm <- parseModule theMod
     >>= typecheckModule
     >>= desugarModule
     >>= liftIO . hscSimplify env . coreModule
     >>= liftIO . tidyProgram env
     >>= prepPgm env . fst
+#if __GLASGOW_HASKELL__ >= 707
+    >>= liftIO . coreToStg dynflags mod
+#else
     >>= liftIO . coreToStg dynflags
+#endif
   return (pgm, name)
   where
     prepPgm env tidy = liftIO $ do
@@ -181,14 +210,16 @@ prepare dynflags theMod = do
 
 
 -- | Run Google Closure on a file.
-closurize :: FilePath -> FilePath -> IO ()
-closurize cloPath file = do
+closurize :: FilePath -> FilePath -> [String] -> IO ()
+closurize cloPath file arguments = do
   logStr $ "Running the Google Closure compiler on " ++ file ++ "..."
   let cloFile = file `addExtension` ".clo"
   cloOut <- openFile cloFile WriteMode
   build <- runProcess "java"
-             ["-jar", cloPath, "--compilation_level", "ADVANCED_OPTIMIZATIONS",
+             (["-jar", cloPath,
+              "--compilation_level", "ADVANCED_OPTIMIZATIONS",
               "--jscomp_off", "globalThis", file]
+              ++ arguments)
              Nothing
              Nothing
              Nothing
@@ -225,10 +256,12 @@ compile cfg dynflags modSummary = do
           (pgm, name) <- prepare dynflags modSummary
 #if __GLASGOW_HASKELL__ >= 706
           let pkgid = showPpr dynflags $ modulePackageId $ ms_mod modSummary
+              cfg' = cfg {showOutputable = showPpr dynflags}
 #else
           let pkgid = showPpr $ modulePackageId $ ms_mod modSummary
+              cfg' = cfg {showOutputable = showPpr}
 #endif
-              theCode = generate cfg fp pkgid name pgm
+              theCode = generate cfg' fp pkgid name pgm
           liftIO $ logStr $ "Compiling " ++ myName ++ " into " ++ targetpath
           liftIO $ writeModule targetpath theCode
   where

@@ -4,11 +4,11 @@
 -- | Low level XMLHttpRequest support. IE6 and older are not supported.
 module Haste.Ajax (Method (..), URL, Key, Val, textRequest, textRequest_,
                    jsonRequest, jsonRequest_) where
-
 -------------------------------------------------------------------------------
 import           Control.Monad.IO.Class
 import           Haste
 import           Haste.JSON
+import           Haste.Prim
 -------------------------------------------------------------------------------
 
 #ifdef __HASTE__
@@ -35,14 +35,14 @@ textRequest :: MonadIO m
             -> (Maybe String -> IO ())
             -> m ()
 textRequest m url kv cb = do
-  _ <- liftIO $ ajaxReq (toJSString $ show m) url' True "" cb'
+  _ <- liftIO $ ajaxReq (toJSStr $ show m) url' True "" cb'
   return ()
   where
     cb' = mkCallback $ cb . fmap fromJSStr
-    kv' = map (\(k,v) -> (toJSString k, toJSString v)) kv
+    kv' = map (\(k,v) -> (toJSStr k, toJSStr v)) kv
     url' = if null kv
-             then toJSString url
-             else catJSStr "?" [toJSString url, toQueryString kv']
+             then toJSStr url
+             else catJSStr "?" [toJSStr url, toQueryString kv']
 
 -- | Same as 'textRequest' but deals with JSStrings instead of Strings.
 textRequest_ :: MonadIO m
@@ -52,7 +52,7 @@ textRequest_ :: MonadIO m
              -> (Maybe JSString -> IO ())
              -> m ()
 textRequest_ m url kv cb = liftIO $ do
-  _ <- ajaxReq (toJSString $ show m) url' True "" (mkCallback cb)
+  _ <- ajaxReq (toJSStr $ show m) url' True "" (mkCallback cb)
   return ()
   where
     url' = if null kv then url else catJSStr "?" [url, toQueryString kv]
@@ -65,8 +65,8 @@ jsonRequest :: MonadIO m
             -> (Maybe JSON -> IO ())
             -> m ()
 jsonRequest m url kv cb = liftIO $ do
-  jsonRequest_ m (toJSString url)
-                 (map (\(k,v) -> (toJSString k, toJSString v)) kv)
+  jsonRequest_ m (toJSStr url)
+                 (map (\(k,v) -> (toJSStr k, toJSStr v)) kv)
                  cb
 
 -- | Does the same thing as 'jsonRequest' but uses 'JSString's instead of
@@ -78,7 +78,7 @@ jsonRequest_ :: MonadIO m
              -> (Maybe JSON -> IO ())
              -> m ()
 jsonRequest_ m url kv cb = liftIO $ do
-  _ <- ajaxReq (toJSString $ show m) url' True pd cb'
+  _ <- ajaxReq (toJSStr $ show m) url' True pd cb'
   return ()
   where
     liftEither (Right x) = Just x

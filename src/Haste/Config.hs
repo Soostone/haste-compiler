@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, Rank2Types #-}
 module Haste.Config (
   Config (..), AppStart, defConfig, stdJSLibs, startCustom, fastMultiply,
   safeMultiply, debugLib) where
@@ -8,6 +8,7 @@ import Blaze.ByteString.Builder
 import Blaze.ByteString.Builder.Char.Utf8
 import Data.Monoid
 import Haste.Environment
+import Outputable (Outputable)
 
 type AppStart = Builder -> Builder
 
@@ -75,7 +76,7 @@ data Config = Config {
     ppOpts :: PPOpts,
     -- | A function that takes the name of the a target as its input and
     --   outputs the name of the file its JS blob should be written to.
-    outFile :: String -> String,
+    outFile :: Config -> String -> String,
     -- | Link the program?
     performLink :: Bool,
     -- | A function to call on each Int arithmetic primop.
@@ -93,8 +94,16 @@ data Config = Config {
     tracePrimops :: Bool,
     -- | Run the entire thing through Google Closure when done?
     useGoogleClosure :: Maybe FilePath,
+    -- | Extra flags for Google Closure to take?
+    useGoogleClosureFlags :: [String],
     -- | Any external Javascript to link into the JS bundle.
-    jsExternals :: [FilePath]
+    jsExternals :: [FilePath],
+    -- | Produce a skeleton HTML file containing the program rather than a
+    --   JS file.
+    outputHTML :: Bool,
+    -- | GHC DynFlags used for STG generation.
+    --   Currently only used for printing StgSyn values.
+    showOutputable :: forall a. Outputable a => a -> String
   }
 
 -- | Default compiler configuration.
@@ -106,7 +115,10 @@ defConfig = Config {
     appStart         = startOnLoadComplete,
     wrapProg         = False,
     ppOpts           = def,
-    outFile          = flip replaceExtension "js",
+    outFile          = \cfg f -> let ext = if outputHTML cfg
+                                             then "html"
+                                             else "js"
+                                 in replaceExtension f ext,
     performLink      = True,
     wrapIntMath      = strictly32Bits,
     multiplyIntOp    = safeMultiply,
@@ -115,5 +127,8 @@ defConfig = Config {
     sloppyTCE        = False,
     tracePrimops     = False,
     useGoogleClosure = Nothing,
-    jsExternals      = []
+    useGoogleClosureFlags = [],
+    jsExternals      = [],
+    outputHTML       = False,
+    showOutputable   = const "No showOutputable defined in config!"
   }

@@ -6,14 +6,20 @@ module Haste.DOM (
     getProp', getValue, withElem , withElems, addChild,
     addChildBefore, removeChild, clearChildren , getChildBefore,
     getLastChild, getChildren, setChildren , getStyle, setStyle,
-    getStyle', setStyle'
+    getStyle', setStyle',
+    getFileData, getFileName,
+    setClass, toggleClass, hasClass
   ) where
 import Haste.Prim
 import Haste.JSType
 import Data.Maybe (isNothing, fromJust)
 import Control.Monad.IO.Class
+import Haste.Foreign
+import Haste.Binary.Types
 
 newtype Elem = Elem JSAny
+instance Marshal Elem
+
 type PropID = String
 type ElemID = String
 
@@ -170,3 +176,54 @@ clearChildren = liftIO . jsClearChildren
 -- | Remove the first element from the second's children.
 removeChild :: MonadIO m => Elem -> Elem -> m ()
 removeChild child parent = liftIO $ jsKillChild child parent
+
+-- | Get a file from a file input element.
+getFileData :: MonadIO m => Elem -> Int -> m (Maybe Blob)
+getFileData e ix = liftIO $ do
+    num <- getFiles e
+    if ix < num
+      then Just `fmap` getFile e ix
+      else return Nothing
+  where
+    {-# NOINLINE getFiles #-}
+    getFiles :: Elem -> IO Int
+    getFiles = ffi "(function(e){return e.files.length;})"
+    {-# NOINLINE getFile #-}
+    getFile :: Elem -> Int -> IO Blob
+    getFile = ffi "(function(e,ix){return e.files[ix];})"
+
+-- | Get the name of the currently selected file from a file input element.
+--   Any directory information is stripped, and only the actual file name is
+--   returned, as the directory information is useless (and faked) anyway.
+getFileName :: MonadIO m => Elem -> m String
+getFileName e = liftIO $ do
+    fn <- getProp e "value"
+    return $ reverse $ takeWhile (not . separator) $ reverse fn
+  where
+    separator '/'  = True
+    separator '\\' = True
+    separator _    = False
+
+-- | Add or remove a class from an element's class list.
+setClass :: MonadIO m => Elem -> String -> Bool -> m ()
+setClass e c x = liftIO $ setc e c x
+  where
+    {-# NOINLINE setc #-}
+    setc :: Elem -> String -> Bool -> IO ()
+    setc = ffi "(function(e,c,x){x?e.classList.add(c):e.classList.remove(c);})"
+
+-- | Toggle the existence of a class within an elements class list.
+toggleClass :: MonadIO m => Elem -> String -> m ()
+toggleClass e c = liftIO $ toggc e c
+  where
+    {-# NOINLINE toggc #-}
+    toggc :: Elem -> String -> IO ()
+    toggc = ffi "(function(e,c) {e.classList.toggle(c);})"
+
+-- | Does the given element have a particular class?
+hasClass :: MonadIO m => Elem -> String -> m Bool
+hasClass e c = liftIO $ getc e c
+  where
+    {-# NOINLINE getc #-}
+    getc :: Elem -> String -> IO Bool
+    getc = ffi "(function(e,c) {return e.classList.contains(c);})"
