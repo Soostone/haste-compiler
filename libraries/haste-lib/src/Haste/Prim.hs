@@ -4,6 +4,7 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE OverlappingInstances     #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE TypeSynonymInstances     #-}
 module Haste.Prim (JSString, URL, toJSStr, fromJSStr, catJSStr, JSAny,
                    Ptr, toPtr, fromPtr) where
