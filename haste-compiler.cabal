@@ -75,7 +75,8 @@ Executable haste-boot
         temporary,
         time,
         transformers,
-        network,
+        network >= 2.6,
+        network-uri,
         HTTP,
         executable-path,
         shellmate >= 0.1.5
